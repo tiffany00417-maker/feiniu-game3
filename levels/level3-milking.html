@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>第三關｜牛媽媽擠ㄋㄟㄋㄟ</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="../js/store.js"></script>
+<script src="../js/ar-common.js"></script>
+<script src="../js/farm-models.js"></script>
+<link rel="stylesheet" href="../css/level.css">
+<style>
+  .hand{position:absolute;bottom:calc(96px + env(safe-area-inset-bottom));pointer-events:auto;margin:0;width:42%;padding:18px 0;font-size:18px;box-shadow:0 4px 14px rgba(0,0,0,.3);transition:transform .08s}
+  .hand:active{transform:scale(.94)}
+  #btn-left{left:5%}
+  #btn-right{right:5%}
+  .hand.next{outline:4px solid #fff;outline-offset:-4px}
+  .breeds{display:flex;gap:8px;margin-top:10px}
+  .breeds div{flex:1;background:#fff;border-radius:12px;padding:8px;font-size:13px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<a-scene embedded vr-mode-ui="enabled:false" keyboard-shortcuts="enterVR:false" device-orientation-permission-ui="enabled:false" renderer="alpha:true;antialias:true" loading-screen="enabled:false">
+  <a-assets>
+    <!-- 乳牛模型 models/cow.glb 由 js/farm-models.js 載入 -->
+  </a-assets>
+  <a-entity id="cam3d" camera look-controls="magicWindowTrackingEnabled:true;touchEnabled:false" position="0 1.6 0"></a-entity>
+  <a-entity id="world"></a-entity>
+  <a-entity light="type:ambient;intensity:0.8"></a-entity>
+  <a-entity light="type:directional;intensity:0.7" position="1 3 2"></a-entity>
+</a-scene>
+
+<!-- 1. GPS 等待 -->
+<section id="s-gps" class="screen active">
+  <div class="card">
+    <h1>第三關：牛媽媽擠ㄋㄟㄋㄟ</h1>
+    <div class="muted">距離乳牛媽媽的家還有</div>
+    <div class="big" id="dist">定位中…</div>
+    <div class="muted" id="acc"></div>
+    <p class="muted">走到乳牛媽媽的家附近，關卡會自動開啟 🐄</p>
+    <button class="ghost" id="btn-sim">（測試用）模擬已抵達</button>
+  </div>
+</section>
+
+<!-- 2. 米米開場 -->
+<section id="s-intro" class="screen">
+  <div class="card">
+    <div class="mimi">🐿️</div>
+    <div class="bubble">
+      歡迎來到<b>乳牛媽媽的家</b>！今天要請你幫牛媽媽擠ㄋㄟㄋㄟ 🥛<br>
+      擠奶的祕訣是：手比出 <b>👌 OK 手勢</b>，握住乳頭用力擠！<br>
+      ① 把鏡頭對準牛媽媽的乳房<br>
+      ② <b>左手、右手輪流</b>按下面的 👌 按鈕<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;（同一隻手一直擠是擠不出來的喔）<br>
+      把桶子裝滿就過關！
+    </div>
+    <button id="btn-start">開始擠奶！</button>
+    <p class="muted">會請求開啟相機與動作感測</p>
+  </div>
+</section>
+
+<!-- 3. AR HUD -->
+<div id="hud">
+  <div id="counter">🥛 <span id="milk">0</span> / <span id="goal">12</span></div>
+  <div id="reticle"></div>
+  <button id="btn-left" class="hand">👌 左手</button>
+  <button id="btn-right" class="hand">右手 👌</button>
+  <div id="hint">把鏡頭對準牛媽媽的乳房</div>
+</div>
+
+<!-- 4. 過關 -->
+<section id="s-win" class="screen">
+  <div class="card">
+    <div class="mimi">🥛🐄🥛</div>
+    <h1>第三關完成！</h1>
+    <p>桶子裝滿了，牛媽媽說謝謝你～哞！</p>
+    <div class="big">+<span id="reward">50</span> 飛牛幣</div>
+    <div class="muted">目前共有 <b id="coins">0</b> 飛牛幣</div>
+    <div class="fact">🐿️ <b>米米小知識：飛牛牧場的兩種乳牛</b>
+      <div class="breeds">
+        <div><b>荷蘭牛</b><br>身上是黑白斑點，是最常見的乳牛。</div>
+        <div><b>娟姍牛</b><br>全身是黃褐色，個子比較小。</div>
+      </div>
+      在牧場擠牛奶前要先洗手消毒，再比 OK 手勢輕輕用力擠，牛媽媽才會舒服喔！
+    </div>
+    <button id="btn-back">回到地圖</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+/* ========= 設定（現場實測後修改） ========= */
+const CONFIG = {
+  // TODO：到飛牛牧場乳牛媽媽的家用手機量實際座標再填入（目前為暫定值）
+  checkpoint: { lat: 24.4903, lng: 120.7236, radius: 30 },
+  milkNeed: 12,          // 擠幾下桶子會滿
+  aimAngle: 25,          // 鏡頭離乳房幾度內算對準
+  cowDistance: 3.0,
+  reward: 50
+};
+const BREEDS = { holstein:'荷蘭牛', jersey:'娟姍牛' };
+
+const { $, toast, hint, tween } = FN;
+const { makeCow, makeBucket } = FarmModels;
+const world=$('#world');
+let cow=null, bucketEl=null, bucketMilk=null, milk=0, lastHand=null, breed='holstein';
+
+/* ========= 建立關卡 ========= */
+function buildLevel(){
+  world.innerHTML=''; milk=0; lastHand=null;
+  const pivot=document.createElement('a-entity');
+  pivot.setAttribute('position',`0.15 0 ${-CONFIG.cowDistance}`);   // 牛稍微偏右，讓乳房在畫面中間
+  cow=makeCow(); pivot.appendChild(cow);   // 荷蘭牛模型（models/cow.glb）
+  const bucket=makeBucket(); bucket.setAttribute('position','-0.15 0 0.85');   // 放在牛媽媽肚子旁邊
+  pivot.appendChild(bucket);
+  bucketEl=bucket;
+  bucket.addEventListener('loaded',()=>{ bucketMilk=bucket.querySelector('.milk'); });
+  world.appendChild(pivot);
+  $('#goal').textContent=CONFIG.milkNeed; $('#milk').textContent=0;
+  markNext(null);
+  toast(`今天的牛媽媽是${BREEDS[breed]} 🐄`, 2200);
+  hint('把鏡頭對準牛媽媽的乳房，左右手輪流按 👌');
+}
+
+/* ========= 對準乳房 ========= */
+let aimed=false;
+function udderObj(){ const u=cow && cow.querySelector('.udder'); return u && u.object3D; }
+function loop(now){
+  if(FN.running){
+    const u=udderObj();
+    if(u && FN.camVectors()){ aimed = FN.viewAngle(u) < CONFIG.aimAngle; FN.setRing(aimed?1:0); }
+    // 牛媽媽輕輕晃動
+    if(cow && cow.object3D) cow.object3D.rotation.y=Math.sin(now/900)*0.04;
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ========= 左右手輪流擠 ========= */
+function markNext(hand){
+  // 提示下一次該按哪一隻手（第一次兩邊都可以）
+  $('#btn-left').classList.toggle('next', hand!=='left');
+  $('#btn-right').classList.toggle('next', hand!=='right');
+}
+function squeeze(hand){
+  if(!FN.running) return;
+  if(!aimed){ toast('先把鏡頭對準牛媽媽的乳房'); return; }
+  if(hand===lastHand){
+    FN.sfxBad(); FN.vibrate(80);
+    toast(`換${hand==='left'?'右':'左'}手擠擠看 👌`);
+    return;
+  }
+  lastHand=hand; milk++;
+  $('#milk').textContent=milk;
+  markNext(hand);
+  FN.vibrate(25); FN.tone(620+milk*25,0.08,'triangle',0.15);
+  squirt(hand);
+  if(milk>=CONFIG.milkNeed){
+    FN.running=false; FN.setRing(0);
+    setTimeout(()=>{ FN.tone(130,0.8,'sawtooth',0.12); toast('哞～桶子裝滿了！🥛',2000); }, 400);
+    setTimeout(FN.finishLevel, 2200);
+  }else if(milk===Math.floor(CONFIG.milkNeed/2)){
+    hint('很好！擠到一半了，繼續左右輪流');
+  }
+}
+/* 奶從乳頭射進桶子 */
+function squirt(hand){
+  // 從乳房位置噴出（左手偏後、右手偏前）
+  const from=new THREE.Vector3(); cow.querySelector('.udder').object3D.getWorldPosition(from);
+  from.x += hand==='left' ? -0.06 : 0.06;
+  // 桶子位置（噴奶的終點）
+  const to0=new THREE.Vector3(); bucketEl.object3D.getWorldPosition(to0); to0.y=0.25;
+  for(let k=0;k<3;k++){
+    const d=document.createElement('a-sphere');
+    d.setAttribute('radius','0.022'); d.setAttribute('color','#ffffff');
+    world.appendChild(d);
+    const to=to0.clone(); to.x+=FN.rand(-0.05,0.05); to.z+=FN.rand(-0.05,0.05);
+    d.object3D.position.copy(from);
+    setTimeout(()=>tween(320,p=>{ d.object3D.position.lerpVectors(from,to,p); d.object3D.position.y+=Math.sin(p*Math.PI)*0.12; },()=>{
+      d.parentNode&&d.parentNode.removeChild(d);
+      if(k===2 && bucketMilk){ const h=0.01+0.26*(milk/CONFIG.milkNeed); bucketMilk.setAttribute('height',h); bucketMilk.setAttribute('position',`0 ${h/2+0.005} 0`); }
+    }), k*50);
+  }
+}
+
+/* ========= 操作 ========= */
+$('#btn-left').addEventListener('click',e=>{ e.stopPropagation(); squeeze('left'); });
+$('#btn-right').addEventListener('click',e=>{ e.stopPropagation(); squeeze('right'); });
+// 電腦測試：← → 方向鍵或 A／D 鍵
+window.addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') squeeze('left');
+  if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') squeeze('right');
+});
+
+/* ========= 啟動 ========= */
+FN.init({ level:3, checkpoint:CONFIG.checkpoint, reward:CONFIG.reward, onStart:buildLevel });
+</script>
+</body>
+</html>

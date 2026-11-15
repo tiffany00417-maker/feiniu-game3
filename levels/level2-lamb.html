@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>第二關｜小羊餵奶站</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="../js/store.js"></script>
+<script src="../js/ar-common.js"></script>
+<link rel="stylesheet" href="../css/level.css">
+<style>
+  /* 奶瓶溫度計 */
+  #thermo{position:absolute;right:14px;top:50%;transform:translateY(-50%);width:62px;pointer-events:none;text-align:center}
+  #thermo .tube{position:relative;margin:0 auto;width:26px;height:230px;border-radius:13px;border:3px solid #fff;
+    background:linear-gradient(to top,#4aa3df 0%,#9ad0ec 35%,#ffe08a 55%,#f08a24 75%,#d9534f 100%);box-shadow:0 2px 10px rgba(0,0,0,.35)}
+  #thermo .zone{position:absolute;left:-8px;right:-8px;border:3px solid #3fbf3f;border-radius:6px;background:rgba(63,191,63,.25)}
+  #thermo .mark{position:absolute;left:-12px;right:-12px;height:4px;background:#222;border-radius:2px;transition:bottom .15s}
+  #thermo .val{margin-top:8px;background:rgba(255,248,231,.92);border-radius:10px;padding:4px 0;font-weight:800;color:var(--brown);font-size:15px}
+  #thermo .label{font-size:12px;color:#fff;text-shadow:0 1px 3px #000;margin-bottom:6px}
+  .water{position:absolute;bottom:calc(96px + env(safe-area-inset-bottom));pointer-events:auto;margin:0;padding:12px 14px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+  #btn-hot{left:12px;background:#d9534f}
+  #btn-cold{right:12px;background:#4aa3df}
+  #btn-feed{bottom:calc(150px + env(safe-area-inset-bottom))}
+</style>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<a-scene embedded vr-mode-ui="enabled:false" keyboard-shortcuts="enterVR:false" device-orientation-permission-ui="enabled:false" renderer="alpha:true;antialias:true" loading-screen="enabled:false">
+  <a-assets>
+    <!-- 小羊模型 models/lamb.glb，在 makeLamb() 載入 -->
+  </a-assets>
+  <a-entity id="cam3d" camera look-controls="magicWindowTrackingEnabled:true;touchEnabled:false" position="0 1.6 0">
+    <!-- 跟著鏡頭的奶瓶 -->
+    <a-entity id="bottle" position="-0.3 -0.3 -1" rotation="0 0 20">
+      <a-cylinder radius="0.06" height="0.2" color="#ffffff" opacity="0.85"></a-cylinder>
+      <a-cylinder id="milk" radius="0.055" height="0.15" position="0 -0.02 0" color="#fffaf0"></a-cylinder>
+      <a-cylinder radius="0.063" height="0.03" position="0 0.11 0" color="#8ad0f0"></a-cylinder>
+      <a-cone radius-bottom="0.035" radius-top="0.012" height="0.07" position="0 0.16 0" color="#f3c89b"></a-cone>
+    </a-entity>
+  </a-entity>
+  <a-entity id="world"></a-entity>
+  <a-entity light="type:ambient;intensity:0.8"></a-entity>
+  <a-entity light="type:directional;intensity:0.7" position="1 3 2"></a-entity>
+</a-scene>
+
+<!-- 1. GPS 等待 -->
+<section id="s-gps" class="screen active">
+  <div class="card">
+    <h1>第二關：小羊餵奶站</h1>
+    <div class="muted">距離綿羊區還有</div>
+    <div class="big" id="dist">定位中…</div>
+    <div class="muted" id="acc"></div>
+    <p class="muted">走到綿羊區的小羊旁邊，關卡會自動開啟 🍼</p>
+    <button class="ghost" id="btn-sim">（測試用）模擬已抵達</button>
+  </div>
+</section>
+
+<!-- 2. 米米開場 -->
+<section id="s-intro" class="screen">
+  <div class="card">
+    <div class="mimi">🐿️</div>
+    <div class="bubble">
+      咩～咩～小羊們肚子餓了！<br>
+      小羊的胃很敏感，奶<b>太冷會拉肚子、太燙會燙傷</b>。<br>
+      每瓶奶的溫度都不一樣，<b>有時太冰、有時太燙</b>！<br>
+      ① 看溫度計，判斷要按 <b>🔥加熱水</b> 還是 <b>❄️加冷水</b>，把溫度調到<b style="color:#2e9e2e">綠色區間</b><br>
+      ② 把<b>準心對準</b>頭上有 ⬇️ 的小羊，按 <b>🍼餵奶</b><br>
+      餵飽 <b id="need">3</b> 隻小羊就過關！
+    </div>
+    <button id="btn-start">開始餵小羊！</button>
+    <p class="muted">會請求開啟相機與動作感測</p>
+  </div>
+</section>
+
+<!-- 3. AR HUD -->
+<div id="hud">
+  <div id="counter">🐑 <span id="fed">0</span> / <span id="total">3</span></div>
+  <div id="reticle"></div>
+  <div id="thermo">
+    <div class="label">奶瓶溫度</div>
+    <div class="tube"><div class="zone" id="zone"></div><div class="mark" id="mark"></div></div>
+    <div class="val"><span id="temp">25</span>°C</div>
+  </div>
+  <button id="btn-hot" class="water">🔥 加熱水</button>
+  <button id="btn-cold" class="water">❄️ 加冷水</button>
+  <button id="btn-feed" class="action-btn">🍼 餵奶</button>
+  <div id="hint">先把奶瓶溫度調到綠色區間</div>
+</div>
+
+<!-- 4. 過關 -->
+<section id="s-win" class="screen">
+  <div class="card">
+    <div class="mimi">🍼🐑🍼</div>
+    <h1>第二關完成！</h1>
+    <p>小羊們喝得飽飽的，謝謝你～</p>
+    <div class="big">+<span id="reward">50</span> 飛牛幣</div>
+    <div class="muted">目前共有 <b id="coins">0</b> 飛牛幣</div>
+    <div class="fact">🐿️ <b>米米小知識</b><br>
+      餵小羊的奶要調到接近羊媽媽體溫的溫度，小羊喝了才不會肚子痛。<br>
+      加熱水的時候「剛剛好就好」，不浪費熱水，也是在節省能源、愛護地球喔！</div>
+    <button id="btn-back">回到地圖</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+/* ========= 設定（現場實測後修改） ========= */
+const CONFIG = {
+  // TODO：到飛牛牧場綿羊區（小羊餵奶處）用手機量實際座標再填入（目前為暫定值）
+  checkpoint: { lat: 24.4912, lng: 120.7253, radius: 30 },
+  lambCount: 3,          // 小羊數量
+  // TODO：請牧場確認小羊喝奶的適當溫度，再調整這個區間
+  goodTemp: [38, 41],    // 綠色區間（°C）
+  startTemp: [15, 60],   // 每瓶新奶的起始溫度範圍（不會直接落在綠色區間）
+  hotStep: 4,            // 加一次熱水升幾度
+  coldStep: 3,           // 加一次冷水降幾度
+  scale: [10, 60],       // 溫度計刻度範圍
+  feedAngle: 20,         // 準心離小羊幾度內算對準
+  lambDistance: [2.2, 3.0],
+  reward: 50
+};
+
+const { $, toast, hint, tween } = FN;
+const world=$('#world');
+let fedCount=0, temp=25;
+const lambs=[];
+
+/* ========= 小羊模型（之後可換成 glb） ========= */
+function makeLamb(){
+  const l=document.createElement('a-entity');
+  // 小羊模型（models/lamb.glb）：原本約 1.9 公尺高，縮成 0.33 倍（約 63 公分），往上移讓腳貼地
+  l.innerHTML=`<a-entity gltf-model="url(../models/lamb.glb)" scale="0.33 0.33 0.33" position="0 0.31 0"></a-entity>`;
+  return l;
+}
+/* 頭上的「肚子餓」標記 */
+function makeMarker(){
+  const m=document.createElement('a-entity');
+  m.innerHTML=`<a-cone radius-bottom="0.09" radius-top="0" height="0.18" rotation="180 0 0" color="#f08a24"></a-cone>`;
+  m.setAttribute('position','0 0.85 0');
+  return m;
+}
+function makeHeart(){
+  const h=document.createElement('a-entity');
+  h.innerHTML=`
+    <a-sphere radius="0.05" position="-0.035 0 0" color="#ff5c8a"></a-sphere>
+    <a-sphere radius="0.05" position="0.035 0 0" color="#ff5c8a"></a-sphere>
+    <a-cone radius-bottom="0.07" radius-top="0" height="0.09" position="0 -0.05 0" rotation="180 0 0" color="#ff5c8a"></a-cone>`;
+  return h;
+}
+
+/* ========= 建立關卡 ========= */
+function buildLevel(){
+  world.innerHTML=''; lambs.length=0; fedCount=0;
+  $('#fed').textContent=0; $('#total').textContent=CONFIG.lambCount;
+  const n=CONFIG.lambCount;
+  for(let i=0;i<n;i++){
+    // 小羊分布在玩家前方左右兩側（約 ±110°），要轉身找
+    const deg=(n===1?0:(i/(n-1)-0.5)*220)+FN.rand(-12,12);
+    const ang=THREE.MathUtils.degToRad(deg), dist=FN.rand(...CONFIG.lambDistance);
+    const x=Math.sin(ang)*dist, z=-Math.cos(ang)*dist;
+    const pivot=document.createElement('a-entity');
+    pivot.setAttribute('position',`${x} 0 ${z}`);
+    pivot.setAttribute('rotation',`0 ${FN.faceOrigin(x,z)} 0`);
+    const body=makeLamb(), marker=makeMarker();
+    pivot.appendChild(body); pivot.appendChild(marker);
+    world.appendChild(pivot);
+    lambs.push({pivot, body, marker, state:'hungry', phase:Math.random()*10, hopAt:-1e9});
+  }
+  newBottle();
+  hintForTemp();
+}
+
+/* ========= 溫度計 ========= */
+const [S0,S1]=CONFIG.scale;
+const pct=t=>Math.max(0,Math.min(100,(t-S0)/(S1-S0)*100));
+$('#zone').style.bottom=pct(CONFIG.goodTemp[0])+'%';
+$('#zone').style.height=(pct(CONFIG.goodTemp[1])-pct(CONFIG.goodTemp[0]))+'%';
+function inRange(){ return temp>=CONFIG.goodTemp[0] && temp<=CONFIG.goodTemp[1]; }
+function drawTemp(){
+  $('#temp').textContent=Math.round(temp);
+  $('#mark').style.bottom=`calc(${pct(temp)}% - 2px)`;
+  $('#temp').parentNode.style.color = inRange() ? '#2e9e2e' : (temp>CONFIG.goodTemp[1] ? '#d9534f' : '#4aa3df');
+  // 奶瓶裡的奶顏色：冷偏藍、熱偏橘
+  const milk=$('#milk');
+  if(milk) milk.setAttribute('color', inRange() ? '#fffaf0' : (temp>CONFIG.goodTemp[1] ? '#ffd2b0' : '#e3f1ff'));
+}
+/** 新的一瓶奶：整數溫度，隨機落在綠色區間以外（有時太冰、有時太燙） */
+function newBottle(){
+  const [lo,hi]=CONFIG.startTemp, [g0,g1]=CONFIG.goodTemp;
+  const opts=[]; for(let t=lo;t<=hi;t++) if(t<g0||t>g1) opts.push(t);
+  temp=opts[Math.floor(Math.random()*opts.length)];
+  drawTemp();
+}
+function hintForTemp(){
+  if(inRange()) hint('溫度剛剛好！把準心對準肚子餓的小羊，按 🍼 餵奶');
+  else if(temp>CONFIG.goodTemp[1]) hint('太燙了！按 ❄️ 加冷水');
+  else hint('太冰了！按 🔥 加熱水');
+}
+function addWater(delta){
+  if(!FN.running) return;
+  temp=Math.max(S0, Math.min(S1, temp+delta));
+  FN.tone(delta>0?520:340, 0.12, 'triangle', 0.15);
+  const b=$('#bottle').object3D; tween(200,p=>{ b.rotation.z=THREE.MathUtils.degToRad(20-Math.sin(p*Math.PI)*15); });
+  drawTemp();
+  hintForTemp();
+}
+
+/* ========= 每一幀：對準判定、小羊動畫 ========= */
+let last=performance.now(), aimed=null;
+function loop(now){
+  last=now;
+  if(FN.running){
+    // 準心對準的小羊
+    const hungry=lambs.filter(l=>l.state==='hungry');
+    const {item, angle}=FN.closestToCenter(hungry, l=>l.body.object3D, 0.35);
+    aimed = (item && angle<CONFIG.feedAngle) ? item : null;
+    FN.setRing(aimed?1:0);
+    // 小羊動畫：輕輕晃、標記上下浮動
+    lambs.forEach(l=>{
+      const hop=Math.max(0,1-(now-l.hopAt)/500);
+      l.body.object3D.position.y=Math.sin(hop*Math.PI)*0.25;
+      l.body.object3D.rotation.z = l.state==='hungry' ? Math.sin(now/300+l.phase)*0.05 : 0;
+      if(l.marker.object3D) l.marker.object3D.position.y=0.85+Math.sin(now/250+l.phase)*0.05;
+    });
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ========= 餵奶 ========= */
+function feed(){
+  if(!FN.running) return;
+  if(!aimed){ toast('先把準心對準頭上有 ⬇️ 的小羊'); return; }
+  const l=aimed;
+  if(temp>CONFIG.goodTemp[1]){ FN.sfxBad(); toast('好燙！小羊不敢喝 🥵 加點冷水'); l.hopAt=performance.now(); return; }
+  if(temp<CONFIG.goodTemp[0]){ FN.sfxBad(); toast('太冰了，小羊會拉肚子 🥶 加點熱水'); l.hopAt=performance.now(); return; }
+
+  l.state='fed'; fedCount++;
+  $('#fed').textContent=fedCount;
+  l.marker.parentNode && l.marker.parentNode.removeChild(l.marker);
+  FN.vibrate([40,40,40]); FN.sfxGood();
+  toast('咕嚕咕嚕～小羊喝得好開心 ❤️');
+  l.hopAt=performance.now();
+  // 冒出愛心
+  const heart=makeHeart(); heart.setAttribute('position','0 0.8 0.2'); l.pivot.appendChild(heart);
+  tween(1200,p=>{ heart.object3D.position.y=0.8+p*0.6; const s=1+p*0.5; heart.object3D.scale.set(s,s,s); },
+        ()=>heart.parentNode && heart.parentNode.removeChild(heart));
+
+  if(fedCount>=CONFIG.lambCount){ FN.running=false; setTimeout(FN.finishLevel,1300); return; }
+  newBottle();
+  setTimeout(()=>toast(`換一瓶新的奶！還有 ${CONFIG.lambCount-fedCount} 隻小羊在等`, 1800), 1500);
+  hintForTemp();
+}
+
+/* ========= 按鈕 ========= */
+$('#btn-hot').addEventListener('click',e=>{ e.stopPropagation(); addWater(CONFIG.hotStep); });
+$('#btn-cold').addEventListener('click',e=>{ e.stopPropagation(); addWater(-CONFIG.coldStep); });
+$('#btn-feed').addEventListener('click',e=>{ e.stopPropagation(); feed(); });
+// 電腦測試：H 加熱水、C 加冷水、F 或空白鍵餵奶
+window.addEventListener('keydown',e=>{
+  if(e.key==='h'||e.key==='H') addWater(CONFIG.hotStep);
+  if(e.key==='c'||e.key==='C') addWater(-CONFIG.coldStep);
+  if(e.key==='f'||e.key==='F'||e.code==='Space'){ e.preventDefault(); feed(); }
+});
+
+/* ========= 啟動 ========= */
+$('#need').textContent=CONFIG.lambCount;
+FN.init({ level:2, checkpoint:CONFIG.checkpoint, reward:CONFIG.reward,
+          onStart:buildLevel });
+</script>
+</body>
+</html>

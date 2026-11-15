@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>第一關｜兔兔找找看</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="../js/store.js"></script>
+<script src="../js/ar-common.js"></script>
+<link rel="stylesheet" href="../css/level.css">
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<!-- 3D 場景（相機畫面在後面，場景背景透明 = 疊加式 AR） -->
+<a-scene embedded vr-mode-ui="enabled:false" keyboard-shortcuts="enterVR:false" device-orientation-permission-ui="enabled:false" renderer="alpha:true;antialias:true" loading-screen="enabled:false">
+  <a-assets>
+    <!-- 兔子模型（Meshy 生成，已壓縮到約 0.7 MB） -->
+    <a-asset-item id="rabbitModel" src="../models/rabbit.glb"></a-asset-item>
+  </a-assets>
+  <a-entity id="cam3d" camera look-controls="magicWindowTrackingEnabled:true;touchEnabled:false" position="0 1.6 0"></a-entity>
+  <a-entity id="world"></a-entity>
+  <a-entity light="type:ambient;intensity:0.8"></a-entity>
+  <a-entity light="type:directional;intensity:0.7" position="1 3 2"></a-entity>
+</a-scene>
+
+<!-- 1. GPS 等待畫面 -->
+<section id="s-gps" class="screen active">
+  <div class="card">
+    <h1>第一關：兔子區</h1>
+    <div class="muted">距離兔子區還有</div>
+    <div class="big" id="dist">定位中…</div>
+    <div class="muted" id="acc"></div>
+    <p class="muted">走到兔子區附近，關卡會自動開啟 🐰</p>
+    <button class="ghost" id="btn-sim">（測試用）模擬已抵達</button>
+  </div>
+</section>
+
+<!-- 2. 米米開場 -->
+<section id="s-intro" class="screen">
+  <div class="card">
+    <div class="mimi">🐿️</div>
+    <div class="bubble">
+      嗨！我是導遊<b>松鼠米米</b>～<br>
+      兔子區的兔兔們都躲進洞裡了！<br>
+      ① 轉動手機，把<b>準心對準兔子洞</b>看一下<br>
+      ② 找到兔兔後，<b>往上滑</b>丟胡蘿蔔餵牠 🥕<br>
+      餵飽 <b id="need">3</b> 隻兔兔就過關囉！
+    </div>
+    <button id="btn-start">開始找兔兔！</button>
+    <p class="muted">會請求開啟相機與動作感測</p>
+  </div>
+</section>
+
+<!-- 3. AR HUD -->
+<div id="hud">
+  <div id="counter">🐰 <span id="fed">0</span> / <span id="total">3</span></div>
+  <div id="reticle"></div>
+  <button id="btn-carrot" class="action-btn">🥕 丟胡蘿蔔</button>
+  <div id="hint">轉動手機找找看地上的兔子洞</div>
+</div>
+
+<!-- 4. 過關 -->
+<section id="s-win" class="screen">
+  <div class="card">
+    <div class="mimi">🎉🐰🎉</div>
+    <h1>第一關完成！</h1>
+    <p>兔兔們都吃飽了，謝謝你～</p>
+    <div class="big">+<span id="reward">50</span> 飛牛幣</div>
+    <div class="muted">目前共有 <b id="coins">0</b> 飛牛幣</div>
+    <button id="btn-back">回到地圖</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+/* ========= 設定（現場實測後修改） ========= */
+const CONFIG = {
+  // TODO：到飛牛牧場兔子區用手機量實際座標再填入（目前為暫定值）
+  checkpoint: { lat: 24.4905, lng: 120.7245, radius: 25 }, // radius：公尺，GPS 誤差約 5~15m，建議 20~30
+  holeCount: 6,        // 兔子洞數量
+  rabbitCount: 3,      // 其中有兔子的洞
+  holeDistance: 2.6,   // 洞離玩家距離（公尺）
+  gazeAngle: 12,       // 準心離洞幾度內算「看著」
+  gazeTime: 800,       // 看多久（毫秒）會揭曉
+  feedAngle: 22,       // 丟胡蘿蔔時兔子要在幾度內才算丟中
+  reward: 50
+};
+
+const { $, toast, hint, tween } = FN;
+const scene = $('a-scene'), world = $('#world');
+let fedCount = 0;
+const holes = [];
+
+/* ========= 建立模型（之後可換成 glb） ========= */
+function makeRabbit(){
+  const r=document.createElement('a-entity');
+  // 模型原本約 1.9 公尺高、中心在腰部：縮成 0.3 倍（約 57 公分），再往上移讓屁股貼地
+  r.innerHTML=`<a-entity gltf-model="#rabbitModel" scale="0.3 0.3 0.3" position="0 0.29 0"></a-entity>`;
+  return r;
+}
+function makeCarrot(){
+  const c=document.createElement('a-entity');
+  c.innerHTML=`
+    <a-cone radius-bottom="0.06" radius-top="0.005" height="0.3" rotation="180 0 0" color="#f08a24"></a-cone>
+    <a-cylinder radius="0.035" height="0.1" position="0 0.19 0" color="#4caf50"></a-cylinder>`;
+  return c;
+}
+
+function buildLevel(){
+  world.innerHTML=''; holes.length=0; fedCount=0;
+  $('#fed').textContent=0; $('#total').textContent=CONFIG.rabbitCount;
+  const withRabbit=FN.shuffle([...Array(CONFIG.holeCount).keys()]).slice(0,CONFIG.rabbitCount);
+  for(let i=0;i<CONFIG.holeCount;i++){
+    const ang=(i/CONFIG.holeCount)*Math.PI*2+(Math.random()-.5)*0.4;
+    const x=Math.sin(ang)*CONFIG.holeDistance, z=-Math.cos(ang)*CONFIG.holeDistance;
+    const el=document.createElement('a-entity');
+    el.setAttribute('position',`${x} 0 ${z}`);
+    el.setAttribute('rotation',`0 ${FN.faceOrigin(x,z)} 0`); // 讓兔子面向玩家
+    el.innerHTML=`
+      <a-circle class="pit" radius="0.45" rotation="-90 0 0" color="#3b2a1a"></a-circle>
+      <a-ring radius-inner="0.45" radius-outer="0.62" rotation="-90 0 0" position="0 0.01 0" color="#8a6a40"></a-ring>`;
+    const hole={el, rabbit:null, hasRabbit:withRabbit.includes(i), state:'hidden', gaze:0};
+    if(hole.hasRabbit){
+      hole.rabbit=makeRabbit();
+      el.appendChild(hole.rabbit);
+      hole.rabbit.addEventListener('loaded',()=>{ hole.rabbit.object3D.position.y=-1; hole.rabbit.object3D.visible=false; });
+    }
+    world.appendChild(el);
+    holes.push(hole);
+  }
+  hint('轉動手機找找看地上的兔子洞，把準心對準洞口');
+}
+
+/* ========= 每一幀：視線判定 ========= */
+let last=performance.now();
+function loop(now){
+  const dt=now-last; last=now;
+  if(FN.running){
+    const hidden=holes.filter(h=>h.state==='hidden');
+    const {item:best, angle} = FN.closestToCenter(hidden, h=>h.el.object3D);
+    holes.forEach(h=>{ if(h!==best) h.gaze=0; });
+    if(best && angle<CONFIG.gazeAngle){
+      best.gaze+=dt; FN.setRing(best.gaze/CONFIG.gazeTime);
+      if(best.gaze>=CONFIG.gazeTime){ FN.setRing(0); reveal(best); }
+    } else FN.setRing(0);
+    // 等待餵食的兔兔輕輕晃動
+    holes.forEach(h=>{ if(h.state==='hungry') h.rabbit.object3D.rotation.z=Math.sin(now/250)*0.08; });
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ========= 揭曉兔子洞 ========= */
+function reveal(h){
+  FN.vibrate(60);
+  if(h.hasRabbit){
+    h.state='hungry';
+    const o=h.rabbit.object3D; o.visible=true;
+    tween(450, p=>{ const e=1-Math.pow(1-p,3); o.position.y=-1+e*1.08; }, ()=>tween(150,p=>{o.position.y=0.08-0.08*p;}));
+    FN.sfxGood();
+    toast('找到兔兔了！🐰');
+    hint('往上滑動，把胡蘿蔔丟給兔兔 🥕');
+  }else{
+    h.state='empty';
+    h.el.querySelector('.pit').setAttribute('color','#7a6a55');
+    toast('這個洞是空的…再找找別的洞');
+  }
+}
+
+/* ========= 滑動丟胡蘿蔔 ========= */
+function throwCarrot(){
+  if(!FN.running) return;
+  const cv=FN.camVectors(); if(!cv) return;
+  const fwd=cv.fwd.clone(), camPos=cv.pos.clone();
+  const hungry=holes.filter(h=>h.state==='hungry');
+  const {item:target, angle} = FN.closestToCenter(hungry, h=>h.rabbit.object3D, 0.5);
+  const hit = target && angle<CONFIG.feedAngle;
+
+  const start=camPos.clone().add(fwd.clone().multiplyScalar(0.5)); start.y-=0.3;
+  const end=new THREE.Vector3();
+  if(hit){ target.rabbit.object3D.getWorldPosition(end); end.y+=0.55; target.state='feeding'; }
+  else { end.copy(camPos).add(fwd.clone().multiplyScalar(3)); end.y=Math.max(0,end.y); }
+
+  const carrot=makeCarrot(); scene.appendChild(carrot);
+  carrot.object3D.position.copy(start);
+  tween(500, p=>{
+    carrot.object3D.position.lerpVectors(start,end,p);
+    carrot.object3D.position.y+=Math.sin(p*Math.PI)*0.5;
+    carrot.object3D.rotation.x=p*Math.PI*4;
+  }, ()=>{
+    carrot.parentNode && carrot.parentNode.removeChild(carrot);
+    if(hit) fed(target); else toast(holes.some(h=>h.state==='hungry')?'沒丟中～對準兔兔再試一次':'先找到兔兔再餵牠喔');
+  });
+}
+function fed(h){
+  h.state='fed'; fedCount++;
+  $('#fed').textContent=fedCount;
+  FN.vibrate([40,40,40]); FN.sfxGood();
+  toast('兔兔吃得好開心 ❤️');
+  const o=h.rabbit.object3D; o.rotation.z=0;
+  tween(900, p=>{ o.position.y=Math.abs(Math.sin(p*Math.PI*3))*0.3; });
+  if(fedCount>=CONFIG.rabbitCount){ FN.running=false; setTimeout(FN.finishLevel,1300); }
+  else hint(`還有 ${CONFIG.rabbitCount-fedCount} 隻兔兔在等你，繼續找！`);
+}
+
+let ty=0, tt=0;
+window.addEventListener('touchstart',e=>{ ty=e.touches[0].clientY; tt=performance.now(); },{passive:true});
+window.addEventListener('touchend',e=>{
+  const dy=e.changedTouches[0].clientY-ty;
+  if(dy<-50 && performance.now()-tt<700) throwCarrot();
+},{passive:true});
+// 電腦測試用：滑鼠拖曳轉視角，按 F 或空白鍵丟
+window.addEventListener('keydown',e=>{ if(e.key==='f'||e.key==='F'||e.code==='Space'){ e.preventDefault(); throwCarrot(); } });
+$('#btn-carrot').addEventListener('click',e=>{ e.stopPropagation(); throwCarrot(); });
+
+/* ========= 啟動 ========= */
+$('#need').textContent=CONFIG.rabbitCount;
+FN.init({ level:1, checkpoint:CONFIG.checkpoint, reward:CONFIG.reward, onStart:buildLevel });
+</script>
+</body>
+</html>
