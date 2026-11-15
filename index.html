@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>飛牛牧場探險｜主頁</title>
+<style>
+  :root{--green:#3f7d3a;--cream:#fff8e7;--brown:#6b4423;--orange:#f08a24;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;font-family:"PingFang TC","Noto Sans TC",system-ui,sans-serif;background:linear-gradient(#bfe3a8,#7cc06a);color:#222;padding:24px 16px}
+  .wrap{max-width:420px;margin:0 auto}
+  header{text-align:center;margin-bottom:16px}
+  h1{margin:0;color:var(--brown);font-size:24px}
+  .coins{display:inline-block;margin-top:10px;background:var(--cream);padding:8px 18px;border-radius:999px;font-weight:800;color:var(--brown)}
+  .level{display:flex;align-items:center;gap:14px;background:var(--cream);border-radius:18px;padding:14px 16px;margin:12px 0;text-decoration:none;color:inherit;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+  .level .icon{font-size:36px}
+  .level b{display:block;color:var(--brown)}
+  .level small{color:#666}
+  .level.locked{opacity:.5;pointer-events:none}
+  .done{margin-left:auto;color:var(--green);font-weight:800}
+  .note{font-size:13px;color:#33521f;text-align:center;margin-top:18px}
+  button{border:0;background:none;color:#33521f;text-decoration:underline;font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div style="font-size:48px">🐿️</div>
+    <h1>飛牛牧場探險</h1>
+    <div class="coins">🪙 飛牛幣 <span id="coins">0</span></div>
+  </header>
+
+  <!-- 關卡清單：檔名固定為 levels/levelN-xxx.html，介面改版時請保留這些連結 -->
+  <a class="level" href="levels/level1-rabbit.html" data-level="1">
+    <span class="icon">🐰</span>
+    <span><b>第一關：兔兔找找看</b><small>兔寶寶的家・找兔子餵胡蘿蔔</small></span>
+    <span class="done" id="d1"></span>
+  </a>
+  <a class="level" href="levels/level2-lamb.html" data-level="2">
+    <span class="icon">🍼</span>
+    <span><b>第二關：小羊餵奶站</b><small>綿羊區・調好奶溫餵小羊</small></span>
+    <span class="done" id="d2"></span>
+  </a>
+  <a class="level" href="levels/level3-milking.html" data-level="3">
+    <span class="icon">🐄</span>
+    <span><b>第三關：牛媽媽擠ㄋㄟㄋㄟ</b><small>乳牛媽媽的家・左右手輪流擠奶</small></span>
+    <span class="done" id="d3"></span>
+  </a>
+  <a class="level" href="levels/level4-duck.html" data-level="4">
+    <span class="icon">🦆</span>
+    <span><b>第四關：鴨鴨過橋音樂會</b><small>水域生態區・聽旋律敲鈴鐺</small></span>
+    <span class="done" id="d4"></span>
+  </a>
+  <a class="level" href="levels/level5-poop.html" data-level="5">
+    <span class="icon">🪱</span>
+    <span><b>第五關：牛糞變黃金</b><small>乳牛生態區・黑水虻把牛糞變肥料</small></span>
+    <span class="done" id="d5"></span>
+  </a>
+  <a class="level" href="levels/level6-butterfly.html" data-level="6">
+    <span class="icon">🦋</span>
+    <span><b>第六關：蝴蝶攝影師</b><small>蝴蝶生態園區・拍到 3 種蝴蝶</small></span>
+    <span class="done" id="d6"></span>
+  </a>
+
+  <p class="note">走到園區各區域，關卡會用 GPS 自動開啟<br>
+    <button id="reset">（測試用）清除飛牛幣與進度</button></p>
+</div>
+<script src="js/store.js"></script>
+<script>
+  document.getElementById('coins').textContent = Store.getCoins();
+  for(let i=1;i<=6;i++){ const d=document.getElementById('d'+i); if(d && Store.isDone(i)) d.textContent='✔ 完成'; }
+  document.getElementById('reset').onclick=()=>{ Store.reset(); location.reload(); };
+</script>
+</body>
+</html>
