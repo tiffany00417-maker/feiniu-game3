@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>第六關｜蝴蝶攝影師</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="../js/store.js"></script>
+<script src="../js/ar-common.js"></script>
+<link rel="stylesheet" href="../css/level.css">
+<style>
+  /* 圖鑑格：拍到才顯示蝴蝶名字 */
+  #slots{position:absolute;top:calc(64px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;gap:8px}
+  #slots .slot{width:78px;background:rgba(255,248,231,.92);border-radius:12px;padding:6px 4px;text-align:center;font-size:12px;font-weight:700;color:#999}
+  #slots .slot .sw{width:34px;height:22px;margin:0 auto 4px;border-radius:50% 50% 40% 40%;background:#ddd;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px}
+  #slots .slot.got{color:var(--brown)}
+  #btn-shot{font-size:20px;padding:16px 30px}
+  #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:8;transition:opacity .25s}
+  #flash.on{opacity:.85;transition:none}
+</style>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<a-scene embedded vr-mode-ui="enabled:false" keyboard-shortcuts="enterVR:false" device-orientation-permission-ui="enabled:false" renderer="alpha:true;antialias:true" loading-screen="enabled:false">
+  <a-assets>
+    <!-- 蝴蝶模型 models/butterfly-purple/orange/white.glb，在 makeButterfly() 載入 -->
+  </a-assets>
+  <a-entity id="cam3d" camera look-controls="magicWindowTrackingEnabled:true;touchEnabled:false" position="0 1.6 0"></a-entity>
+  <a-entity id="world"></a-entity>
+  <a-entity light="type:ambient;intensity:0.9"></a-entity>
+  <a-entity light="type:directional;intensity:0.6" position="1 3 2"></a-entity>
+</a-scene>
+
+<!-- 1. GPS 等待 -->
+<section id="s-gps" class="screen active">
+  <div class="card">
+    <h1>第六關：蝴蝶攝影師</h1>
+    <div class="muted">距離蝴蝶生態園區還有</div>
+    <div class="big" id="dist">定位中…</div>
+    <div class="muted" id="acc"></div>
+    <p class="muted">走到蝴蝶生態園區，關卡會自動開啟 🦋</p>
+    <button class="ghost" id="btn-sim">（測試用）模擬已抵達</button>
+  </div>
+</section>
+
+<!-- 2. 米米開場 -->
+<section id="s-intro" class="screen">
+  <div class="card">
+    <div class="mimi">🐿️</div>
+    <div class="bubble">
+      你知道嗎？「飛牛」的<b>飛</b>，說的就是蝴蝶喔！🦋<br>
+      這裡的花叢有好幾種蝴蝶飛來飛去，<br>
+      今天你是<b>蝴蝶攝影師</b>：<br>
+      ① 轉動手機找蝴蝶，用<b>準心對準</b>牠<br>
+      ② 按 <b>📸 拍照</b>！蝴蝶<b>停在花上休息</b>的時候最好拍<br>
+      拍到 <b>3 種不同的蝴蝶</b>就過關！
+    </div>
+    <button id="btn-start">開始拍蝴蝶！</button>
+    <p class="muted">會請求開啟相機與動作感測</p>
+  </div>
+</section>
+
+<!-- 3. AR HUD -->
+<div id="hud">
+  <div id="counter">📸 <span id="got">0</span> / <span id="need">3</span> 種</div>
+  <div id="slots"></div>
+  <div id="reticle"></div>
+  <button id="btn-shot" class="action-btn">📸 拍照</button>
+  <div id="hint">轉動手機，找找花叢附近的蝴蝶</div>
+</div>
+<div id="flash"></div>
+
+<!-- 4. 過關 -->
+<section id="s-win" class="screen">
+  <div class="card">
+    <div class="mimi">🦋📸🦋</div>
+    <h1>第六關完成！</h1>
+    <p>你拍到了 3 種蝴蝶，已經收進圖鑑囉～</p>
+    <div class="big">+<span id="reward">50</span> 飛牛幣</div>
+    <div class="muted">目前共有 <b id="coins">0</b> 飛牛幣</div>
+    <div class="fact">🐿️ <b>米米小知識</b><br>
+      蝴蝶長大要靠兩種植物：成蟲吸花蜜的<b>蜜源植物</b>，和幼蟲吃的<b>食草</b>。像樺斑蝶的幼蟲最愛吃馬利筋。<br>
+      觀察蝴蝶用「拍」的就好，不要抓牠，也不要摘花，蝴蝶才會一直留在這裡！</div>
+    <button id="btn-back">回到地圖</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+/* ========= 設定（現場實測後修改） ========= */
+const CONFIG = {
+  // TODO：到飛牛牧場蝴蝶生態園區用手機量實際座標再填入（目前為暫定值）
+  checkpoint: { lat: 24.4888, lng: 120.7262, radius: 35 },
+  perSpecies: 2,          // 每種蝴蝶有幾隻（同一種拍第二次不算）
+  flowerCount: 7,         // 花的數量
+  flowerDistance: [1.8, 2.8],
+  flyTime: [2.6, 4.0],    // 從一朵花飛到另一朵花要幾秒
+  restTime: [3.0, 5.0],   // 停在花上休息幾秒
+  aimRest: 13,            // 蝴蝶休息時，準心離牠幾度內拍得到
+  aimFly: 8,              // 蝴蝶飛行時，準心要更準
+  size: 0.22,             // 蝴蝶模型縮放（模型寬約 1.9，縮成翅膀展開約 42 公分；比真的蝴蝶大，手機上才看得到）
+  reward: 50
+};
+// TODO：請牧場確認蝴蝶園有哪些蝴蝶；換種類時改名字和顏色即可
+// 三種都用同一個蝴蝶模型，只是換顏色（models/butterfly-紫/橘/白.glb）
+const SPECIES = [
+  { id:'euploea', name:'紫斑蝶', model:'butterfly-purple', wing:'#6a3fc4', scale:1.15 },
+  { id:'danaus',  name:'樺斑蝶', model:'butterfly-orange', wing:'#e8892b', scale:1.0  },
+  { id:'pieris',  name:'紋白蝶', model:'butterfly-white',  wing:'#e9e7df', scale:0.85 }
+];
+
+const { $, toast, hint } = FN;
+const world=$('#world');
+const flowers=[], flies=[];
+const got=new Set();
+
+/* ========= 模型 ========= */
+function makeFlower(){
+  const f=document.createElement('a-entity');
+  const h=FN.rand(0.55,0.95), c=['#e86fa3','#b07cd8','#f5c542','#ff8a65'][Math.floor(Math.random()*4)];
+  let petals='';
+  for(let i=0;i<6;i++){ const a=i/6*Math.PI*2; petals+=`<a-sphere radius="0.05" scale="1 0.35 1" position="${Math.cos(a)*0.07} ${h} ${Math.sin(a)*0.07}" color="${c}"></a-sphere>`; }
+  f.innerHTML=`
+    <a-cylinder radius="0.012" height="${h}" position="0 ${h/2} 0" color="#4c9a3a"></a-cylinder>
+    <a-sphere radius="0.05" scale="1.6 0.4 0.8" position="0.05 ${h*0.5} 0" rotation="0 0 25" color="#5fae4a"></a-sphere>
+    ${petals}
+    <a-sphere radius="0.04" position="0 ${h+0.02} 0" color="#f9e04b"></a-sphere>`;
+  return {el:f, top:h+0.06};
+}
+/* 蝴蝶：模型是翅膀展開、正面朝 +Z 的樣子；每一幀轉向玩家，用左右縮放模擬拍翅膀 */
+function makeButterfly(sp){
+  const b=document.createElement('a-entity');
+  const k=CONFIG.size*sp.scale;
+  b.innerHTML=`<a-entity class="flap" scale="${k} ${k} ${k}">
+      <a-entity gltf-model="url(../models/${sp.model}.glb)"></a-entity>
+    </a-entity>`;
+  return b;
+}
+
+/* ========= 建立關卡 ========= */
+function buildLevel(){
+  world.innerHTML=''; flowers.length=0; flies.length=0; got.clear();
+  for(let i=0;i<CONFIG.flowerCount;i++){
+    const ang=(i/CONFIG.flowerCount)*Math.PI*2+FN.rand(-0.25,0.25), d=FN.rand(...CONFIG.flowerDistance);
+    const x=Math.sin(ang)*d, z=-Math.cos(ang)*d;
+    const fl=makeFlower(); fl.el.setAttribute('position',`${x} 0 ${z}`);
+    world.appendChild(fl.el);
+    flowers.push({el:fl.el, pos:new THREE.Vector3(x, fl.top, z), busy:false});
+  }
+  SPECIES.forEach(sp=>{
+    for(let k=0;k<CONFIG.perSpecies;k++){
+      const el=makeButterfly(sp); world.appendChild(el);
+      const start=flowers[Math.floor(Math.random()*flowers.length)];
+      const bf={el, sp, pos:start.pos.clone().add(new THREE.Vector3(0,FN.rand(0.3,0.8),0)), state:'fly',
+                from:null, to:null, flower:null, t0:0, dur:0, phase:Math.random()*10, gone:false};
+      el.__bf=bf; flies.push(bf);
+      flyToNewFlower(bf, performance.now());
+    }
+  });
+  drawSlots();
+  hint('轉動手機，找找花叢附近的蝴蝶');
+}
+function drawSlots(){
+  $('#got').textContent=got.size;
+  $('#slots').innerHTML=SPECIES.map(sp=>{
+    const has=got.has(sp.id);
+    return `<div class="slot ${has?'got':''}"><div class="sw" style="background:${has?sp.wing:'#ccc'};${has&&sp.id==='pieris'?'border:1px solid #bbb;':''}">${has?'':'?'}</div>${has?sp.name:'？？？'}</div>`;
+  }).join('');
+}
+
+/* ========= 蝴蝶的飛行與休息 ========= */
+function flyToNewFlower(bf, now){
+  if(bf.flower) bf.flower.busy=false;
+  const free=flowers.filter(f=>!f.busy);
+  const target=free[Math.floor(Math.random()*free.length)] || flowers[0];
+  target.busy=true;
+  bf.flower=target; bf.state='fly'; bf.from=bf.pos.clone(); bf.to=target.pos.clone();
+  bf.t0=now; bf.dur=FN.rand(...CONFIG.flyTime)*1000;
+}
+const tmpV=new THREE.Vector3(), camW=new THREE.Vector3();
+function updateButterflies(now){
+  const cam=$('#cam3d').getObject3D('camera'); if(cam) cam.getWorldPosition(camW);
+  flies.forEach(bf=>{
+    if(!bf.el.object3D) return;
+    if(bf.state==='fly'){
+      const p=Math.min(1,(now-bf.t0)/bf.dur), e=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+      bf.pos.lerpVectors(bf.from, bf.to, e);
+      // 飛行路線：中途抬高，左右擺動
+      bf.pos.y+=Math.sin(p*Math.PI)*0.5 + Math.sin(now/260+bf.phase)*0.06;
+      bf.pos.x+=Math.sin(now/420+bf.phase)*0.12*Math.sin(p*Math.PI);
+      if(p>=1){ bf.state='rest'; bf.t0=now; bf.dur=FN.rand(...CONFIG.restTime)*1000; }
+    }else if(bf.state==='rest'){
+      if(now-bf.t0>bf.dur) flyToNewFlower(bf, now);
+    }else if(bf.state==='leave'){
+      const p=(now-bf.t0)/2000;
+      bf.pos.y+=0.012; bf.pos.x+=Math.sin(now/200)*0.01;
+      if(p>=1 && !bf.gone){ bf.gone=true; bf.el.parentNode&&bf.el.parentNode.removeChild(bf.el); }
+    }
+    const o=bf.el.object3D;
+    o.position.copy(bf.pos);
+    // 永遠面向玩家（只轉水平方向），讓翅膀正面朝向鏡頭
+    o.rotation.y=Math.atan2(camW.x-bf.pos.x, camW.z-bf.pos.z);
+    // 拍翅膀：飛行時快、休息時慢慢開合
+    const speed = bf.state==='rest' ? 0.004 : 0.03;
+    const amp   = bf.state==='rest' ? 0.5 : 1.1;
+    const ang=(Math.sin(now*speed+bf.phase)*0.5+0.5)*amp;
+    const fl=bf.el.querySelector('.flap');
+    if(fl && fl.object3D){ const k=CONFIG.size*bf.sp.scale; fl.object3D.scale.set(k*(1-ang*0.75), k, k); }
+  });
+}
+
+/* ========= 對準與拍照 ========= */
+let aimed=null;
+function loop(now){
+  if(FN.running){
+    updateButterflies(now);
+    let best=null, bestA=999;
+    if(FN.camVectors()){
+      flies.forEach(bf=>{
+        if(bf.state==='leave'||bf.gone) return;
+        const a=FN.viewAngle(bf.el.object3D);
+        const ok = a < (bf.state==='rest'?CONFIG.aimRest:CONFIG.aimFly);
+        if(ok && a<bestA){ bestA=a; best=bf; }
+      });
+    }
+    aimed=best; FN.setRing(aimed?1:0);
+  }else if(flies.length){ updateButterflies(now); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function shutter(){
+  const f=$('#flash'); f.classList.add('on'); requestAnimationFrame(()=>requestAnimationFrame(()=>f.classList.remove('on')));
+  FN.tone(2200,0.04,'square',0.08); setTimeout(()=>FN.tone(1400,0.05,'square',0.06),60);
+}
+function shoot(bf){
+  if(!FN.running) return;
+  bf = bf || aimed;
+  shutter(); FN.vibrate(30);
+  if(!bf){ setTimeout(()=>toast('沒拍到～對準蝴蝶再按一次（停在花上的最好拍）'),150); return; }
+  if(got.has(bf.sp.id)){ setTimeout(()=>toast(`${bf.sp.name}已經拍過了，找找別種蝴蝶吧`),150); return; }
+  got.add(bf.sp.id);
+  saveToDex(bf.sp);
+  drawSlots();
+  setTimeout(()=>{ FN.sfxGood(); toast(`拍到了！是${bf.sp.name} 🦋`, 1800); },150);
+  // 拍完的蝴蝶飛走
+  if(bf.flower) bf.flower.busy=false;
+  bf.state='leave'; bf.t0=performance.now();
+  if(got.size>=SPECIES.length){ FN.running=false; FN.setRing(0); hint('三種蝴蝶都拍到了！'); setTimeout(FN.finishLevel, 1800); }
+  else hint(`還差 ${SPECIES.length-got.size} 種，找找不一樣顏色的蝴蝶`);
+}
+/* 存進圖鑑（給介面的圖鑑頁讀取） */
+function saveToDex(sp){
+  const dex=Store.getJSON('dex',{}); dex.butterfly=dex.butterfly||[];
+  if(!dex.butterfly.includes(sp.name)) dex.butterfly.push(sp.name);
+  Store.setJSON('dex',dex);
+}
+
+/* ========= 操作：按鈕或直接點蝴蝶 ========= */
+$('#btn-shot').addEventListener('click',e=>{ e.stopPropagation(); shoot(); });
+function tapAt(x,y){
+  const hit=FN.pick(world,x,y,el=>!!el.__bf);
+  if(hit && hit.el.__bf.state!=='leave'){ shoot(hit.el.__bf); return true; }
+  return false;
+}
+let lastTouch=0;
+window.addEventListener('touchstart',e=>{
+  lastTouch=performance.now();
+  if(!FN.running || e.target.closest('button')) return;
+  const t=e.changedTouches[0]; tapAt(t.clientX,t.clientY);
+},{passive:true});
+window.addEventListener('click',e=>{
+  if(!FN.running || e.target.closest('button') || performance.now()-lastTouch<800) return;
+  tapAt(e.clientX,e.clientY);
+});
+// 電腦測試：F 或空白鍵拍照
+window.addEventListener('keydown',e=>{ if(e.key==='f'||e.key==='F'||e.code==='Space'){ e.preventDefault(); shoot(); } });
+
+/* ========= 啟動 ========= */
+$('#need').textContent=SPECIES.length;
+FN.init({ level:6, checkpoint:CONFIG.checkpoint, reward:CONFIG.reward, onStart:buildLevel });
+</script>
+</body>
+</html>

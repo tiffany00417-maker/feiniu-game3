@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>第四關｜鴨鴨過橋音樂會</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="../js/store.js"></script>
+<script src="../js/ar-common.js"></script>
+<link rel="stylesheet" href="../css/level.css">
+<style>
+  /* 旋律譜 */
+  #melody{position:absolute;top:calc(64px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(255,248,231,.92);padding:8px 10px;border-radius:16px}
+  /* 題目隱藏：平常只有圓點，敲對亮起；被提示的音才顯示音名與顏色 */
+  #melody .n{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;background:#d8cfbb;border:3px solid transparent}
+  #melody .n.now{border-color:var(--brown);transform:scale(1.12)}
+  #melody .n.ok{background:#f2c94c}
+  #melody .n.reveal{box-shadow:0 0 0 3px #fff inset}
+  #btn-listen{position:absolute;right:12px;bottom:calc(96px + env(safe-area-inset-bottom));pointer-events:auto;margin:0;padding:12px 14px;font-size:15px;background:#6aa84f;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+  #btn-ring{left:38%}
+  .shake{animation:shake .35s}
+  @keyframes shake{25%{transform:translateX(calc(-50% - 6px))}75%{transform:translateX(calc(-50% + 6px))}}
+</style>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<a-scene embedded vr-mode-ui="enabled:false" keyboard-shortcuts="enterVR:false" device-orientation-permission-ui="enabled:false" renderer="alpha:true;antialias:true" loading-screen="enabled:false">
+  <a-assets>
+    <!-- 之後放鴨子模型，例如：
+    <a-asset-item id="duckModel" src="../models/duck.glb"></a-asset-item> -->
+  </a-assets>
+  <a-entity id="cam3d" camera look-controls="magicWindowTrackingEnabled:true;touchEnabled:false" position="0 1.6 0"></a-entity>
+  <a-entity id="world"></a-entity>
+  <a-entity light="type:ambient;intensity:0.8"></a-entity>
+  <a-entity light="type:directional;intensity:0.7" position="1 3 2"></a-entity>
+</a-scene>
+
+<!-- 1. GPS 等待 -->
+<section id="s-gps" class="screen active">
+  <div class="card">
+    <h1>第四關：鴨鴨過橋音樂會</h1>
+    <div class="muted">距離水域生態區還有</div>
+    <div class="big" id="dist">定位中…</div>
+    <div class="muted" id="acc"></div>
+    <p class="muted">走到水域生態區的水池旁，關卡會自動開啟 🦆</p>
+    <button class="ghost" id="btn-sim">（測試用）模擬已抵達</button>
+  </div>
+</section>
+
+<!-- 2. 米米開場 -->
+<section id="s-intro" class="screen">
+  <div class="card">
+    <div class="mimi">🐿️</div>
+    <div class="bubble">
+      呱呱～小鴨想過橋回到池塘對面的家！<br>
+      牠只聽得懂<b>音樂</b>，你的四周有 4 個鈴鐺：<br>
+      <b style="color:#e74c3c">Do</b>、<b style="color:#f39c12">Re</b>、<b style="color:#d4ac0d">Mi</b>、<b style="color:#27ae60">Fa</b><br>
+      ① 按 <b>🔊聽旋律</b>，仔細聽是哪幾個音（題目是祕密喔！）<br>
+      ② 轉身找到對的鈴鐺，<b>準心對準</b>後按 <b>🔔敲鈴鐺</b>（或直接點鈴鐺）<br>
+      每敲對一個音，小鴨就往前走一步！<br>
+      同一個音連續敲錯 2 次，米米會偷偷告訴你答案～
+    </div>
+    <button id="btn-start">開始音樂會！</button>
+    <p class="muted">會請求開啟相機與動作感測，請打開手機聲音 🔊</p>
+  </div>
+</section>
+
+<!-- 3. AR HUD -->
+<div id="hud">
+  <div id="counter">🦆 <span id="step">0</span> / <span id="len">7</span></div>
+  <div id="melody"></div>
+  <div id="reticle"></div>
+  <button id="btn-ring" class="action-btn">🔔 敲鈴鐺</button>
+  <button id="btn-listen">🔊 聽旋律</button>
+  <div id="hint">先按 🔊 聽一次旋律</div>
+</div>
+
+<!-- 4. 過關 -->
+<section id="s-win" class="screen">
+  <div class="card">
+    <div class="mimi">🦆🎵🦆</div>
+    <h1>第四關完成！</h1>
+    <p>小鴨跟著你的音樂，平安過橋回家了～</p>
+    <div class="big">+<span id="reward">50</span> 飛牛幣</div>
+    <div class="muted">目前共有 <b id="coins">0</b> 飛牛幣</div>
+    <div class="fact">🐿️ <b>米米小知識</b><br>
+      池塘是鴨子的家，牠們在水裡游泳、找食物。<br>
+      不在水池邊亂丟垃圾、不把飲料倒進水裡，乾淨的水才能讓鴨鴨和其他小動物健康長大喔！</div>
+    <button id="btn-back">回到地圖</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+/* ========= 設定（現場實測後修改） ========= */
+const CONFIG = {
+  // TODO：到飛牛牧場水域生態區用手機量實際座標再填入（目前為暫定值）
+  checkpoint: { lat: 24.4895, lng: 120.7255, radius: 30 },
+  melody: ['Do','Mi','Fa','Mi','Re','Do','Re'],   // 要彈的旋律（團隊筆記的範例）
+  bellAngles: [-120, -40, 40, 120],              // 4 個鈴鐺在玩家四周的角度（0 = 正前方）
+  bellDistance: 2.4,
+  aimAngle: 16,          // 準心離鈴鐺幾度內算對準
+  reward: 50
+};
+// 音名、頻率（C5 大調）、顏色
+const NOTES = {
+  Do:{freq:523.25, color:'#e74c3c'},
+  Re:{freq:587.33, color:'#f39c12'},
+  Mi:{freq:659.25, color:'#d4ac0d'},
+  Fa:{freq:698.46, color:'#27ae60'}
+};
+
+const { $, toast, hint, tween } = FN;
+const world=$('#world');
+let step=0, duck=null, busy=false, wrongStreak=0;
+const revealed=new Set();   // 已經被提示（公開）的題目位置
+const bells=[];
+// 小鴨路線：從玩家前方出發，走過小橋到池塘對面（z 越小越遠）
+const PATH_START=new THREE.Vector3(0,0,-2.3), PATH_END=new THREE.Vector3(0,0,-6.9);
+
+/* ========= 模型（之後可換成 glb） ========= */
+function makeDuck(){
+  const d=document.createElement('a-entity');
+  // 換成模型時：d.setAttribute('gltf-model','#duckModel'); 並刪掉下面 innerHTML
+  d.innerHTML=`
+    <a-sphere radius="0.2" scale="1 0.8 1.3" position="0 0.2 0" color="#fffdf5"></a-sphere>
+    <a-sphere radius="0.08" scale="0.5 0.6 1.4" position="0.17 0.24 0" color="#f2efe4"></a-sphere>
+    <a-sphere radius="0.08" scale="0.5 0.6 1.4" position="-0.17 0.24 0" color="#f2efe4"></a-sphere>
+    <a-cone radius-bottom="0.06" radius-top="0" height="0.12" position="0 0.28 0.26" rotation="-60 0 0" color="#fffdf5"></a-cone>
+    <a-entity class="head" position="0 0.42 -0.18">
+      <a-sphere radius="0.13" color="#fffdf5"></a-sphere>
+      <a-cone radius-bottom="0.05" radius-top="0.02" height="0.12" position="0 -0.02 -0.15" rotation="-90 0 0" scale="1.4 1 0.6" color="#f39c12"></a-cone>
+      <a-sphere radius="0.02" position="0.07 0.04 -0.1" color="#111"></a-sphere>
+      <a-sphere radius="0.02" position="-0.07 0.04 -0.1" color="#111"></a-sphere>
+    </a-entity>
+    <a-box width="0.08" height="0.02" depth="0.1" position="0.07 0.01 -0.03" color="#f39c12"></a-box>
+    <a-box width="0.08" height="0.02" depth="0.1" position="-0.07 0.01 -0.03" color="#f39c12"></a-box>`;
+  return d;
+}
+function makeBell(name){
+  const n=NOTES[name];
+  const b=document.createElement('a-entity');
+  b.innerHTML=`
+    <a-cylinder radius="0.02" height="1.3" position="0 -0.75 0" color="#8a6a40"></a-cylinder>
+    <a-entity class="swing">
+      <a-cone radius-bottom="0.2" radius-top="0.07" height="0.28" position="0 0 0" color="${n.color}" metalness="0.4" roughness="0.3"></a-cone>
+      <a-sphere radius="0.075" position="0 0.15 0" color="${n.color}" metalness="0.4" roughness="0.3"></a-sphere>
+      <a-torus radius="0.2" radius-tubular="0.015" rotation="90 0 0" position="0 -0.14 0" color="#ffffff"></a-torus>
+      <a-sphere radius="0.045" position="0 -0.17 0" color="#555"></a-sphere>
+    </a-entity>
+    <a-text value="${name}" align="center" color="#ffffff" width="2.2" position="0 0.38 0" side="double"></a-text>
+    <a-circle radius="0.14" position="0 0.38 -0.01" color="${n.color}" side="double"></a-circle>`;
+  return b;
+}
+function makePondAndBridge(){
+  const g=document.createElement('a-entity');
+  g.innerHTML=`
+    <a-circle radius="2.0" rotation="-90 0 0" position="0 0.01 -4.6" color="#4aa3df" opacity="0.8"></a-circle>
+    <a-ring radius-inner="2.0" radius-outer="2.2" rotation="-90 0 0" position="0 0.012 -4.6" color="#8bc34a"></a-ring>
+    <a-box width="0.6" height="0.08" depth="4.6" position="0 0.06 -4.6" color="#a0703c"></a-box>
+    <a-box width="0.05" height="0.25" depth="4.6" position="0.3 0.2 -4.6" color="#7a5228"></a-box>
+    <a-box width="0.05" height="0.25" depth="4.6" position="-0.3 0.2 -4.6" color="#7a5228"></a-box>
+    <a-cone radius-bottom="0.3" radius-top="0" height="0.45" position="0.7 0.52 -7.2" color="#c0392b"></a-cone>
+    <a-box width="0.55" height="0.35" depth="0.45" position="0.7 0.17 -7.2" color="#f5deb3"></a-box>`;
+  return g;
+}
+
+/* ========= 建立關卡 ========= */
+function buildLevel(){
+  world.innerHTML=''; bells.length=0; step=0; busy=false; wrongStreak=0; revealed.clear();
+  world.appendChild(makePondAndBridge());
+  // 4 個鈴鐺隨機分配到四個方向，每次玩都不一樣
+  const names=FN.shuffle(Object.keys(NOTES));
+  CONFIG.bellAngles.forEach((deg,i)=>{
+    const ang=THREE.MathUtils.degToRad(deg+FN.rand(-8,8));
+    const x=Math.sin(ang)*CONFIG.bellDistance, z=-Math.cos(ang)*CONFIG.bellDistance;
+    const el=makeBell(names[i]);
+    el.setAttribute('position',`${x} 1.45 ${z}`);
+    el.setAttribute('rotation',`0 ${FN.faceOrigin(x,z)} 0`);
+    const bell={el, name:names[i], ringAt:-1e9};
+    el.__bell=bell;
+    world.appendChild(el); bells.push(bell);
+  });
+  duck=makeDuck(); duck.setAttribute('position',`${PATH_START.x} 0.1 ${PATH_START.z}`);
+  world.appendChild(duck);
+  drawMelody();
+  hint('先按 🔊 聽一次旋律，再轉身找鈴鐺');
+}
+function drawMelody(){
+  $('#len').textContent=CONFIG.melody.length; $('#step').textContent=step;
+  // 只有被提示過的音才顯示音名和顏色，其他都是圓點（敲對的會亮起來）
+  $('#melody').innerHTML=CONFIG.melody.map((n,i)=>{
+    const show=revealed.has(i);
+    const cls=['n', i<step?'ok':'', i===step?'now':'', show?'reveal':''].join(' ');
+    return `<div class="${cls}" ${show?`style="background:${NOTES[n].color}"`:''}>${show?n:''}</div>`;
+  }).join('');
+}
+
+/* ========= 聲音 ========= */
+function ringSound(name){ FN.tone(NOTES[name].freq, 0.9); }
+function playMelody(){
+  FN.unlockAudio();
+  if(busy) return;
+  busy=true;
+  CONFIG.melody.forEach((n,i)=>setTimeout(()=>{
+    ringSound(n);
+    const els=$('#melody').children; [...els].forEach((e,k)=>e.classList.toggle('now',k===i));
+  }, i*550));
+  setTimeout(()=>{ busy=false; drawMelody(); hint(`第 ${step+1} 個音是哪一個鈴鐺？轉身找找看`); }, CONFIG.melody.length*550+200);
+}
+
+/* ========= 每一幀 ========= */
+let aimed=null;
+function loop(now){
+  if(FN.running){
+    const {item, angle}=FN.closestToCenter(bells, b=>b.el.object3D, 0);
+    aimed=(item && angle<CONFIG.aimAngle)?item:null;
+    FN.setRing(aimed?1:0);
+    bells.forEach(b=>{
+      const s=b.el.querySelector('.swing'); if(!s||!s.object3D) return;
+      const k=Math.max(0,1-(now-b.ringAt)/700);               // 敲下去會晃
+      s.object3D.rotation.z=Math.sin((now-b.ringAt)/60)*0.5*k;
+      const sc=(b===aimed?1.18:1); s.object3D.scale.set(sc,sc,sc);  // 對準時變大
+    });
+    if(duck && duck.object3D){
+      const head=duck.querySelector('.head');
+      if(head && head.object3D) head.object3D.rotation.x=Math.sin(now/400)*0.1;
+    }
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ========= 敲鈴鐺 ========= */
+function ring(bell){
+  if(!FN.running || busy) return;
+  bell = bell || aimed;
+  if(!bell){ toast('先把準心對準一個鈴鐺'); return; }
+  bell.ringAt=performance.now();
+  ringSound(bell.name); FN.vibrate(30);
+  const want=CONFIG.melody[step];
+  if(bell.name===want){
+    step++; wrongStreak=0; drawMelody();
+    moveDuck();
+    if(step>=CONFIG.melody.length){
+      FN.running=false;
+      toast('完美的旋律！小鴨過橋了 🎵',2200);
+      setTimeout(celebrate, 800);
+    }else{
+      hint(`答對了！接著敲第 ${step+1} 個音`);
+    }
+  }else{
+    setTimeout(FN.sfxBad, 250);
+    wrongStreak++;
+    if(wrongStreak>=2 && !revealed.has(step)){
+      // 同一個音連續錯 2 次：只公開目前這一個音
+      revealed.add(step); drawMelody();
+      toast('米米偷偷告訴你：看看上面亮起來的那一格 🐿️', 2200);
+      hint(`第 ${step+1} 個音已經顯示在上面了，找到那個鈴鐺吧`);
+    }else{
+      toast('好像不是這個音，再聽一次旋律吧');
+      hint('不確定的話，按 🔊 再聽一次旋律');
+    }
+    const m=$('#melody'); m.classList.remove('shake'); void m.offsetWidth; m.classList.add('shake');
+    // 小鴨搖頭
+    tween(500,p=>{ duck.object3D.rotation.y=Math.sin(p*Math.PI*4)*0.4*(1-p); });
+  }
+}
+function moveDuck(){
+  const o=duck.object3D, from=o.position.clone();
+  const to=PATH_START.clone().lerp(PATH_END, step/CONFIG.melody.length); to.y=0.1;
+  tween(500,p=>{ o.position.lerpVectors(from,to,p); o.position.y=0.1+Math.abs(Math.sin(p*Math.PI*2))*0.08; });
+}
+function celebrate(){
+  // 小鴨開心跳，旋律再播一次
+  const o=duck.object3D;
+  CONFIG.melody.forEach((n,i)=>setTimeout(()=>ringSound(n), i*300));
+  tween(2000,p=>{ o.position.y=0.1+Math.abs(Math.sin(p*Math.PI*6))*0.25; o.rotation.y=p*Math.PI*2; });
+  setTimeout(FN.finishLevel, 2600);
+}
+
+/* ========= 操作 ========= */
+$('#btn-ring').addEventListener('click',e=>{ e.stopPropagation(); ring(); });
+$('#btn-listen').addEventListener('click',e=>{ e.stopPropagation(); playMelody(); });
+function tapAt(x,y){
+  const hit=FN.pick(world,x,y,el=>!!el.__bell);
+  if(hit){ ring(hit.el.__bell); return true; }
+  return false;
+}
+let lastTouch=0;
+window.addEventListener('touchstart',e=>{
+  lastTouch=performance.now();
+  if(!FN.running || e.target.closest('button')) return;
+  const t=e.changedTouches[0]; tapAt(t.clientX,t.clientY);
+},{passive:true});
+window.addEventListener('click',e=>{
+  if(!FN.running || e.target.closest('button') || performance.now()-lastTouch<800) return;
+  tapAt(e.clientX,e.clientY);
+});
+// 電腦測試：F 或空白鍵敲鈴鐺、L 聽旋律
+window.addEventListener('keydown',e=>{
+  if(e.key==='f'||e.key==='F'||e.code==='Space'){ e.preventDefault(); ring(); }
+  if(e.key==='l'||e.key==='L') playMelody();
+});
+
+/* ========= 啟動 ========= */
+FN.init({ level:4, checkpoint:CONFIG.checkpoint, reward:CONFIG.reward, onStart:buildLevel });
+</script>
+</body>
+</html>

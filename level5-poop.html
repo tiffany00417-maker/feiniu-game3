@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>第五關｜牛糞變黃金</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="../js/store.js"></script>
+<script src="../js/ar-common.js"></script>
+<script src="../js/farm-models.js"></script>
+<link rel="stylesheet" href="../css/level.css">
+<style>
+  .cycle{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:4px;margin-top:10px;font-size:13px;font-weight:700;color:var(--brown)}
+  .cycle span.step{background:#fff;border-radius:10px;padding:4px 8px}
+</style>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<a-scene embedded vr-mode-ui="enabled:false" keyboard-shortcuts="enterVR:false" device-orientation-permission-ui="enabled:false" renderer="alpha:true;antialias:true" loading-screen="enabled:false">
+  <a-assets>
+    <!-- 乳牛模型 models/cow.glb 由 js/farm-models.js 載入 -->
+  </a-assets>
+  <a-entity id="cam3d" camera look-controls="magicWindowTrackingEnabled:true;touchEnabled:false" position="0 1.6 0">
+    <!-- 跟著鏡頭的鏟子，鏟起來的牛糞會堆在鏟子上 -->
+    <a-entity id="shovel" position="0.3 -0.45 -0.9" rotation="-25 -20 10">
+      <a-cylinder radius="0.012" height="0.45" position="0 -0.12 0.18" rotation="70 0 0" color="#a0703c"></a-cylinder>
+      <a-box width="0.2" height="0.012" depth="0.18" position="0 -0.05 -0.05" color="#8a96a0"></a-box>
+      <a-entity id="load"></a-entity>
+    </a-entity>
+  </a-entity>
+  <a-entity id="world"></a-entity>
+  <a-entity light="type:ambient;intensity:0.8"></a-entity>
+  <a-entity light="type:directional;intensity:0.7" position="1 3 2"></a-entity>
+</a-scene>
+
+<!-- 1. GPS 等待 -->
+<section id="s-gps" class="screen active">
+  <div class="card">
+    <h1>第五關：牛糞變黃金</h1>
+    <div class="muted">距離乳牛生態區還有</div>
+    <div class="big" id="dist">定位中…</div>
+    <div class="muted" id="acc"></div>
+    <p class="muted">走到乳牛生態區附近，關卡會自動開啟 🐄</p>
+    <button class="ghost" id="btn-sim">（測試用）模擬已抵達</button>
+  </div>
+</section>
+
+<!-- 2. 米米開場 -->
+<section id="s-intro" class="screen">
+  <div class="card">
+    <div class="mimi">🐿️</div>
+    <div class="bubble">
+      哞～乳牛吃飽便便了 💩，牛糞可不是垃圾喔！<br>
+      ① 對準地上的牛糞，按 <b>🧹鏟起來</b><br>
+      ② 轉身找到<b>黑水虻幼蟲的飼養箱</b>，對準後按 <b>📥倒進去</b><br>
+      ③ 看幼蟲把牛糞吃光光，變成<b>有機肥料</b>！<br>
+      把 <b id="need">3</b> 堆牛糞都處理完就過關。<br>
+      <span class="muted">（也可以直接用手指點畫面上的東西）</span>
+    </div>
+    <button id="btn-start">開始幫忙！</button>
+    <p class="muted">會請求開啟相機與動作感測</p>
+  </div>
+</section>
+
+<!-- 3. AR HUD -->
+<div id="hud">
+  <div id="counter">🧹 鏟起 <span id="carry">0</span>　🪱 處理 <span id="done">0</span> / <span id="total">3</span></div>
+  <div id="reticle"></div>
+  <button id="btn-act" class="action-btn">🧹 鏟起來</button>
+  <div id="hint">對準地上的牛糞，按 🧹 鏟起來</div>
+</div>
+
+<!-- 4. 過關 -->
+<section id="s-win" class="screen">
+  <div class="card">
+    <div class="mimi">🪱🌱💩</div>
+    <h1>第五關完成！</h1>
+    <p>牛糞都變成有機肥料了～</p>
+    <div class="big">+<span id="reward">50</span> 飛牛幣</div>
+    <div class="muted">目前共有 <b id="coins">0</b> 飛牛幣</div>
+    <div class="fact">🐿️ <b>米米小知識：資源循環</b><br>
+      吃牛糞的是黑水虻的<b>幼蟲</b>，牠們很會吃有機廢棄物。幼蟲吃完排出的「蟲糞沙」就是很好的有機肥料，可以拿去種牧草、種蔬菜。<br>
+      飛牛牧場也會利用牛糞來改良土壤、種有機蔬菜，牛糞一點都不浪費！
+      <div class="cycle">
+        <span class="step">💩 牛糞</span>→<span class="step">🪱 黑水虻幼蟲</span>→<span class="step">🌱 有機肥料</span>→<span class="step">🌿 牧草・蔬菜</span>→<span class="step">🐄 乳牛</span>
+      </div>
+    </div>
+    <button id="btn-back">回到地圖</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+/* ========= 設定（現場實測後修改） ========= */
+const CONFIG = {
+  // TODO：到飛牛牧場乳牛生態區用手機量實際座標再填入（目前為暫定值）
+  checkpoint: { lat: 24.4900, lng: 120.7240, radius: 30 },
+  pileCount: 3,          // 牛糞堆數量
+  eatTime: 2200,         // 幼蟲吃完一堆牛糞要幾毫秒
+  aimAngle: 18,          // 準心離目標幾度內算對準
+  cowDistance: 3.4,
+  binAngle: 160,         // 飼養箱在玩家身後的方向（度，0 = 正前方）
+  binDistance: 1.9,
+  reward: 50
+};
+
+const { $, toast, hint, tween } = FN;
+const { makeCow, makePoop, makeLarva, makeFertilizer } = FarmModels;
+const world=$('#world');
+let cow=null, bin=null, binMound=null, carried=0, processed=0, inBin=0, eating=false;
+const piles=[];   // {el, state:'ground'|'carried'|'bin'}
+
+/* ========= 黑水虻幼蟲飼養箱 ========= */
+function makeBin(){
+  const b=document.createElement('a-entity');
+  b.innerHTML=`
+    <a-box width="0.9" height="0.08" depth="0.6" position="0 0.04 0" color="#7a5228"></a-box>
+    <a-box width="0.9" height="0.4" depth="0.04" position="0 0.24 0.28" color="#a0703c"></a-box>
+    <a-box width="0.9" height="0.4" depth="0.04" position="0 0.24 -0.28" color="#a0703c"></a-box>
+    <a-box width="0.04" height="0.4" depth="0.6" position="0.43 0.24 0" color="#a0703c"></a-box>
+    <a-box width="0.04" height="0.4" depth="0.6" position="-0.43 0.24 0" color="#a0703c"></a-box>
+    <a-box width="0.82" height="0.06" depth="0.52" position="0 0.3 0" color="#6b5137"></a-box>
+    <a-box width="0.5" height="0.18" depth="0.02" position="0 0.62 0.29" color="#fff8e7"></a-box>
+    <a-cylinder radius="0.015" height="0.25" position="0 0.47 0.29" color="#7a5228"></a-cylinder>`;
+  return b;
+}
+
+/* ========= 建立關卡 ========= */
+function buildLevel(){
+  world.innerHTML=''; piles.length=0; carried=0; processed=0; inBin=0; eating=false;
+  $('#load').innerHTML='';
+  // 乳牛在正前方
+  const pivot=document.createElement('a-entity');
+  pivot.setAttribute('position',`0 0 ${-CONFIG.cowDistance}`);
+  cow=makeCow(); pivot.appendChild(cow); world.appendChild(pivot);
+
+  // 飼養箱在玩家身後，要轉身才看得到
+  const ba=THREE.MathUtils.degToRad(CONFIG.binAngle);
+  const bx=Math.sin(ba)*CONFIG.binDistance, bz=-Math.cos(ba)*CONFIG.binDistance;
+  bin=makeBin(); bin.setAttribute('position',`${bx} 0 ${bz}`); bin.setAttribute('rotation',`0 ${FN.faceOrigin(bx,bz)} 0`);
+  bin.__target={type:'bin'};
+  // 箱子裡的幼蟲（一直在扭）
+  const larvae=document.createElement('a-entity'); larvae.setAttribute('class','larvae');
+  for(let k=0;k<14;k++){
+    const l=makeLarva(); l.setAttribute('position',`${FN.rand(-0.33,0.33)} 0.35 ${FN.rand(-0.2,0.2)}`); l.setAttribute('rotation',`0 ${Math.random()*360} 0`);
+    larvae.appendChild(l);
+  }
+  bin.appendChild(larvae);
+  binMound=makePoop(); binMound.setAttribute('position','0 0.3 0'); binMound.setAttribute('scale','0.001 0.001 0.001');
+  bin.appendChild(binMound);
+  world.appendChild(bin);
+
+  // 乳牛便便：牛糞散在玩家前方左右
+  const n=CONFIG.pileCount;
+  for(let i=0;i<n;i++){
+    const deg=(n===1?0:(i/(n-1)-0.5)*130)+FN.rand(-10,10);
+    const ang=THREE.MathUtils.degToRad(deg), dist=FN.rand(1.7,2.3);
+    const x=Math.sin(ang)*dist, z=-Math.cos(ang)*dist;
+    const el=makePoop(); el.setAttribute('position',`${x} 0 ${z}`); el.setAttribute('scale','0.01 0.01 0.01');
+    const pile={el, state:'ground'}; el.__target=pile;
+    world.appendChild(el); piles.push(pile);
+    setTimeout(()=>{ FN.tone(110,0.4,'sawtooth',0.1); tween(400,p=>{ const s=0.01+p; el.object3D.scale.set(s,s,s); }); }, 400+i*350);
+  }
+  $('#total').textContent=n; updateCounter();
+  hint('對準地上的牛糞，按 🧹 鏟起來');
+}
+function updateCounter(){ $('#carry').textContent=carried; $('#done').textContent=processed; }
+
+/* ========= 對準判定 ========= */
+let aimed=null;
+function updateAim(){
+  if(!FN.camVectors()) return;
+  const cands=piles.filter(p=>p.state==='ground').map(p=>({type:'pile', pile:p, obj:p.el.object3D, yOff:0.15}));
+  if(bin) cands.push({type:'bin', obj:bin.object3D, yOff:0.3});
+  let best=null, bestA=999;
+  cands.forEach(c=>{ const a=FN.viewAngle(c.obj, c.yOff); if(a<bestA){bestA=a;best=c;} });
+  aimed=(best && bestA<CONFIG.aimAngle)?best:null;
+  FN.setRing(aimed?1:0);
+  $('#btn-act').textContent = (aimed&&aimed.type==='bin') || (!aimed && carried>0 && !piles.some(p=>p.state==='ground'))
+    ? '📥 倒進去' : '🧹 鏟起來';
+}
+
+/* ========= 動作 ========= */
+function act(target){
+  if(!FN.running) return;
+  target=target||aimed;
+  if(!target){ toast(carried>0 ? '轉身找黑水虻幼蟲的飼養箱' : '先把準心對準地上的牛糞'); return; }
+  if(target.type==='pile') shovel(target.pile);
+  else if(target.type==='bin') pour();
+}
+
+/* ① 鏟牛糞 */
+function shovel(pile){
+  if(pile.state!=='ground') return;
+  pile.state='carried'; carried++; updateCounter();
+  FN.vibrate(30); FN.tone(300,0.12,'triangle',0.15);
+  const o=pile.el.object3D;
+  tween(350,p=>{ const s=1-p; o.scale.set(s,s,s); o.position.y=p*0.4; },()=>pile.el.parentNode&&pile.el.parentNode.removeChild(pile.el));
+  // 鏟子上多一坨
+  const blob=document.createElement('a-sphere');
+  blob.setAttribute('radius','0.035'); blob.setAttribute('color','#5b3a1e'); blob.setAttribute('scale','1.3 0.7 1.1');
+  blob.setAttribute('position',`${FN.rand(-0.05,0.05)} ${-0.02+carried*0.025} ${-0.05+FN.rand(-0.03,0.03)}`);
+  $('#load').appendChild(blob);
+  if(piles.some(p=>p.state==='ground')){ toast('鏟起來了！'); hint('繼續鏟，或轉身把牛糞倒進黑水虻幼蟲的飼養箱'); }
+  else { toast('牛糞都鏟起來了！'); hint('轉身找到黑水虻幼蟲的飼養箱，按 📥 倒進去'); }
+}
+
+/* ② 倒進飼養箱 */
+function pour(){
+  if(carried===0){ toast(piles.some(p=>p.state==='ground')?'鏟子是空的，先去鏟牛糞':'牛糞都處理好了，等幼蟲吃完～'); return; }
+  const n=carried; carried=0; inBin+=n; updateCounter();
+  piles.filter(p=>p.state==='carried').forEach(p=>p.state='bin');
+  $('#load').innerHTML='';
+  FN.vibrate([30,30]); FN.tone(200,0.2,'sawtooth',0.1);
+  toast('倒進去了！幼蟲開動囉 🪱');
+  setMound();
+  if(!eating) eatNext();
+}
+function setMound(){
+  // 箱子裡的牛糞堆：越多堆越大，吃完就消失
+  const from=binMound.object3D.scale.x, to=inBin>0 ? Math.min(1, 0.35+inBin*0.25) : 0.001;
+  tween(300,p=>{ const s=from+(to-from)*p; binMound.object3D.scale.set(s,s,s); });
+}
+
+/* ③ 幼蟲一堆一堆吃掉 */
+function eatNext(){
+  if(inBin===0){ eating=false; return; }
+  eating=true;
+  hint('黑水虻幼蟲正在吃牛糞…');
+  setTimeout(()=>{
+    inBin--; processed++; updateCounter(); setMound();
+    FN.sfxGood();
+    if(processed>=CONFIG.pileCount) return allDone();
+    if(inBin===0){ eating=false;
+      hint(carried>0 ? '把鏟子上的牛糞倒進飼養箱' : (piles.some(p=>p.state==='ground')?'還有牛糞！轉身去鏟起來':'')); }
+    else eatNext();
+  }, CONFIG.eatTime);
+}
+
+/* ④ 全部變成有機肥料 */
+function allDone(){
+  FN.running=false; FN.setRing(0);
+  toast('牛糞都變成有機肥料了！🌱',2200);
+  hint('幼蟲排出的「蟲糞沙」就是很棒的有機肥料');
+  for(let i=0;i<3;i++){
+    const f=makeFertilizer(); f.setAttribute('position',`${-0.5+i*0.5} 0 0.55`); f.setAttribute('scale','0.01 0.01 0.01');
+    bin.appendChild(f);
+    setTimeout(()=>tween(450,p=>{ const s=0.01+p+Math.sin(p*Math.PI)*0.2; f.object3D.scale.set(s,s,s); }), 200+i*250);
+  }
+  setTimeout(FN.finishLevel, 2600);
+}
+
+/* ========= 每一幀 ========= */
+function loop(now){
+  if(FN.running){
+    updateAim();
+    const lv=bin && bin.querySelector('.larvae');
+    if(lv && lv.object3D){
+      const speed = eating ? 3 : 1;   // 吃東西時扭得更快
+      lv.object3D.children.forEach((c,i)=>{ c.rotation.y+=0.03*speed; c.scale.x=1+Math.sin(now/90*speed+i)*0.25; });
+    }
+    if(cow && cow.object3D) cow.object3D.rotation.z=Math.sin(now/900)*0.01;
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ========= 操作：按鈕或直接點東西 ========= */
+$('#btn-act').addEventListener('click',e=>{ e.stopPropagation(); act(); });
+function tapAt(x,y){
+  const hit=FN.pick(world, x, y, el=>!!el.__target);
+  if(!hit) return false;
+  const t=hit.el.__target;
+  if(t.type==='bin'){ act({type:'bin'}); return true; }
+  if(t.state==='ground'){ act({type:'pile', pile:t}); return true; }
+  return false;
+}
+let lastTouch=0;
+window.addEventListener('touchstart',e=>{
+  lastTouch=performance.now();
+  if(!FN.running || e.target.closest('button')) return;
+  const t=e.changedTouches[0]; tapAt(t.clientX,t.clientY);
+},{passive:true});
+window.addEventListener('click',e=>{
+  if(!FN.running || e.target.closest('button') || performance.now()-lastTouch<800) return;
+  tapAt(e.clientX,e.clientY);
+});
+// 電腦測試：F 或空白鍵 = 按動作鈕
+window.addEventListener('keydown',e=>{ if(e.key==='f'||e.key==='F'||e.code==='Space'){ e.preventDefault(); act(); } });
+
+/* ========= 啟動 ========= */
+$('#need').textContent=CONFIG.pileCount;
+FN.init({ level:5, checkpoint:CONFIG.checkpoint, reward:CONFIG.reward, onStart:buildLevel });
+</script>
+</body>
+</html>
