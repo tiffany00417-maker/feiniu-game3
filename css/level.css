@@ -1,0 +1,39 @@
+/* =========================================================
+   level.css：五個 AR 關卡共用的樣式
+   顏色變數之後可以換成 Figma 設計稿的顏色
+   ========================================================= */
+:root{--green:#3f7d3a;--cream:#fff8e7;--brown:#6b4423;--orange:#f08a24;--red:#d9534f}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#2f4a2a;font-family:"PingFang TC","Noto Sans TC",system-ui,sans-serif;color:#222;user-select:none;-webkit-user-select:none}
+#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+a-scene{position:fixed!important;inset:0;width:100%!important;height:100%!important;z-index:1}
+
+/* 開場、GPS、過關畫面 */
+.screen{position:fixed;inset:0;z-index:10;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;background:linear-gradient(#bfe3a8,#7cc06a);overflow-y:auto}
+.screen.active{display:flex}
+.card{background:var(--cream);border-radius:20px;padding:22px 20px;max-width:360px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+h1{margin:0 0 6px;font-size:22px;color:var(--brown)}
+.big{font-size:42px;font-weight:800;color:var(--green);margin:10px 0}
+.muted{color:#666;font-size:14px}
+button{border:0;border-radius:999px;padding:14px 26px;font-size:17px;font-weight:700;background:var(--orange);color:#fff;margin-top:14px;cursor:pointer;font-family:inherit}
+button.ghost{background:transparent;color:var(--brown);border:2px dashed var(--brown);font-size:13px;padding:8px 14px}
+.mimi{font-size:64px}
+.bubble{background:#fff;border-radius:16px;padding:14px;margin-top:8px;text-align:left;line-height:1.6}
+.fact{background:#fdf0d5;border-radius:14px;padding:12px;margin-top:12px;text-align:left;font-size:14px;line-height:1.6}
+
+/* AR 遊戲中的 HUD */
+#hud{position:fixed;inset:0;z-index:5;pointer-events:none;display:none}
+#hud.active{display:block}
+#counter{position:absolute;top:calc(14px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:rgba(255,248,231,.92);padding:8px 18px;border-radius:999px;font-weight:800;font-size:18px;color:var(--brown);white-space:nowrap}
+#hint{position:absolute;bottom:calc(28px + env(safe-area-inset-bottom));left:16px;right:16px;text-align:center;background:rgba(0,0,0,.55);color:#fff;padding:12px;border-radius:14px;font-size:15px}
+.action-btn{position:absolute;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);pointer-events:auto;margin:0;box-shadow:0 4px 14px rgba(0,0,0,.3);white-space:nowrap}
+.action-btn:disabled{background:#999}
+
+/* 準心（--p：0~1 的進度） */
+#reticle{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
+  background:conic-gradient(var(--orange) calc(var(--p,0)*360deg),rgba(255,255,255,.35) 0);
+  -webkit-mask:radial-gradient(circle,transparent 21px,#000 22px);mask:radial-gradient(circle,transparent 21px,#000 22px)}
+#reticle::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#fff}
+
+#toast{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%) scale(.9);z-index:20;background:rgba(255,248,231,.96);color:var(--brown);padding:14px 20px;border-radius:16px;font-weight:700;font-size:17px;opacity:0;transition:.25s;pointer-events:none;max-width:85vw;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
